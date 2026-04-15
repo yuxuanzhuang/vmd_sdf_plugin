@@ -3,8 +3,9 @@
 #   source sdfloader1.0/sdfloader.tcl
 #   set molids [sdfload path/to/file.sdf]
 #
-# Command-line usage:
-#   vmd -dispdev text -e sdfloader1.0/sdfloader.tcl -args path/to/file.sdf
+# If sourced from ~/.vmdrc, standard VMD loads such as
+#   mol new path/to/file.sdf
+# are intercepted and handled by this script.
 
 package provide sdfloader 1.0
 
@@ -20,6 +21,8 @@ namespace eval ::SDFLoader {
         No Lr Rf Db Sg Bh Hs Mt Ds Rg
     }
     variable cli_name_fields {NAME Name TITLE Title ID Id}
+    variable last_molids {}
+    variable menu_registered 0
 }
 
 proc ::SDFLoader::split_records {filename} {
@@ -538,6 +541,133 @@ proc ::SDFLoader::ensure_vmd_packages {} {
     }
 }
 
+proc ::SDFLoader::is_sdf_filename {filename} {
+    set lower [string tolower [file tail $filename]]
+    return [expr {[string match *.sdf $lower] || [string match *.sd $lower]}]
+}
+
+proc ::SDFLoader::is_sdf_type {type} {
+    set normalized [string tolower [string trim $type]]
+    return [expr {$normalized in {isissdf sdf sd}}]
+}
+
+proc ::SDFLoader::extract_type_option {args} {
+    set count [llength $args]
+    for {set i 0} {$i < $count} {incr i} {
+        if {![string equal -nocase [lindex $args $i] "type"]} {
+            continue
+        }
+        incr i
+        if {$i < $count} {
+            return [lindex $args $i]
+        }
+        break
+    }
+    return ""
+}
+
+proc ::SDFLoader::should_intercept_mol {subcmd args} {
+    if {$subcmd ni {new addfile}} {
+        return 0
+    }
+    if {[llength $args] == 0} {
+        return 0
+    }
+
+    set target [lindex $args 0]
+    if {[string equal -nocase $target "atoms"]} {
+        return 0
+    }
+
+    set type [::SDFLoader::extract_type_option {*}[lrange $args 1 end]]
+    if {$type ne ""} {
+        set normalized [string tolower [string trim $type]]
+        if {$normalized eq "sdf"} {
+            return 0
+        }
+        return [::SDFLoader::is_sdf_type $type]
+    }
+
+    return [::SDFLoader::is_sdf_filename $target]
+}
+
+proc ::SDFLoader::handle_mol_new_sdf {filename} {
+    variable last_molids
+
+    set last_molids [::SDFLoader::load $filename]
+    if {[llength $last_molids] > 1} {
+        puts [format "Info) SDF import created %d molecules from %s" [llength $last_molids] [file tail $filename]]
+    }
+    return [lindex $last_molids end]
+}
+
+proc ::SDFLoader::mol_dispatch {args} {
+    if {[llength $args] == 0} {
+        return [uplevel 1 [list ::SDFLoader::core_mol]]
+    }
+
+    set subcmd [lindex $args 0]
+    set subargs [lrange $args 1 end]
+
+    if {![::SDFLoader::should_intercept_mol $subcmd {*}$subargs]} {
+        return [uplevel 1 [list ::SDFLoader::core_mol {*}$args]]
+    }
+
+    set filename [lindex $subargs 0]
+    switch -- $subcmd {
+        new {
+            return [::SDFLoader::handle_mol_new_sdf $filename]
+        }
+        addfile {
+            return -code error "SDF import is only supported through 'mol new' or 'sdfload'; 'mol addfile' cannot append SDF records to an existing molecule."
+        }
+    }
+
+    return [uplevel 1 [list ::SDFLoader::core_mol {*}$args]]
+}
+
+proc ::SDFLoader::install_mol_wrapper {} {
+    if {![llength [info commands ::mol]]} {
+        return
+    }
+    if {[llength [info commands ::SDFLoader::core_mol]]} {
+        return
+    }
+
+    rename ::mol ::SDFLoader::core_mol
+    proc ::mol {args} {
+        return [uplevel 1 [list ::SDFLoader::mol_dispatch {*}$args]]
+    }
+}
+
+proc ::SDFLoader::gui_open {} {
+    set filename [tk_getOpenFile \
+        -title "Load SDF File" \
+        -filetypes {{{SDF Files} {.sdf .sd}} {{All Files} {*}}}]
+    if {$filename eq ""} {
+        return
+    }
+    ::SDFLoader::load $filename
+}
+
+proc ::SDFLoader::register_menu {} {
+    variable menu_registered
+
+    if {$menu_registered} {
+        return
+    }
+    if {![info exists ::tk_version]} {
+        return
+    }
+    if {![llength [info commands menu]]} {
+        return
+    }
+
+    if {![catch {menu tk register sdfloadgui ::SDFLoader::gui_open "Data/Load SDF"}]} {
+        set menu_registered 1
+    }
+}
+
 proc ::SDFLoader::build_molecule {record filename record_number} {
     ::SDFLoader::ensure_vmd_packages
 
@@ -573,6 +703,8 @@ proc ::SDFLoader::build_molecule {record filename record_number} {
 }
 
 proc ::SDFLoader::load {filename} {
+    variable last_molids
+
     set normalized [file normalize $filename]
     if {![file exists $normalized]} {
         error "file not found: $filename"
@@ -595,6 +727,7 @@ proc ::SDFLoader::load {filename} {
         }
     }
 
+    set last_molids $molids
     return $molids
 }
 
@@ -614,15 +747,5 @@ proc ::sdfload {filename} {
     return [::SDFLoader::load $filename]
 }
 
-if {[info exists ::argv] && [llength $::argv] > 0} {
-    if {[catch {set exit_code [::SDFLoader::main $::argv]} err opts]} {
-        puts stderr $err
-        if {[dict exists $opts -errorinfo]} {
-            puts stderr [dict get $opts -errorinfo]
-        }
-        catch {exit 1}
-    }
-    if {$exit_code != 0} {
-        catch {exit $exit_code}
-    }
-}
+::SDFLoader::install_mol_wrapper
+::SDFLoader::register_menu
