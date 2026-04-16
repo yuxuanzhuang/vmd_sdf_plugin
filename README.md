@@ -34,6 +34,8 @@ source /Users/scottzhuang/git_rego/vmd_sdf_plugin/sdfloader1.0/sdfloader.tcl
 
 Restart VMD after changing `~/.vmdrc`.
 
+If you start VMD directly with an SDF file, for example `vmd example.sdf`, the initial built-in SDF load may still print a Babel-related error before `~/.vmdrc` is sourced. Once `sdfloader.tcl` loads, it recovers the startup import and, by default, uses split-record mode so each SDF record becomes a separate VMD molecule.
+
 ## 2. Use It With The GUI
 
 ### Trajectory Mode

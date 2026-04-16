@@ -31,6 +31,7 @@ namespace eval ::SDFLoader {
     variable cli_name_fields {NAME Name TITLE Title ID Id}
     variable last_molids {}
     variable menu_registered 0
+    variable startup_autoload_done 0
     variable multimol_types {isissdf sdfmulti sdfmols sdfsplit}
     variable trajectory_type_labels {
         sdf
@@ -201,6 +202,61 @@ proc ::SDFLoader::parse_sdf_properties {lines start_index} {
     }
 
     return $properties
+}
+
+proc ::SDFLoader::shell_split {text} {
+    set tokens {}
+    set current ""
+    set quote ""
+    set escape 0
+
+    foreach ch [split $text ""] {
+        if {$escape} {
+            append current $ch
+            set escape 0
+            continue
+        }
+
+        if {$quote ne ""} {
+            if {$ch eq "\\" && $quote eq "\""} {
+                set escape 1
+                continue
+            }
+            if {$ch eq $quote} {
+                set quote ""
+                continue
+            }
+            append current $ch
+            continue
+        }
+
+        if {$ch eq "'" || $ch eq "\""} {
+            set quote $ch
+            continue
+        }
+        if {$ch eq "\\"} {
+            set escape 1
+            continue
+        }
+        if {[string is space $ch]} {
+            if {$current ne ""} {
+                lappend tokens $current
+                set current ""
+            }
+            continue
+        }
+
+        append current $ch
+    }
+
+    if {$escape} {
+        append current "\\"
+    }
+    if {$current ne ""} {
+        lappend tokens $current
+    }
+
+    return $tokens
 }
 
 proc ::SDFLoader::parse_v2000_atom_line {line atom_index} {
@@ -983,6 +1039,81 @@ proc ::SDFLoader::load {filename {mode molecules}} {
     error "unsupported SDF load mode '$mode'"
 }
 
+proc ::SDFLoader::startup_sdf_candidates {} {
+    if {![llength [info commands ::pid]]} {
+        return {}
+    }
+
+    if {[catch {set cmdline [exec ps -ww -o args= -p [pid]]}]} {
+        return {}
+    }
+
+    set tokens [::SDFLoader::shell_split [string trim $cmdline]]
+    if {[llength $tokens] <= 1} {
+        return {}
+    }
+
+    set files {}
+    foreach token [lrange $tokens 1 end] {
+        if {![::SDFLoader::is_sdf_filename $token]} {
+            continue
+        }
+        if {![file exists $token]} {
+            continue
+        }
+
+        set normalized [file normalize $token]
+        if {[lsearch -exact $files $normalized] < 0} {
+            lappend files $normalized
+        }
+    }
+
+    return $files
+}
+
+proc ::SDFLoader::autoload_startup_sdf {} {
+    variable startup_autoload_done
+
+    if {$startup_autoload_done} {
+        return
+    }
+    set startup_autoload_done 1
+
+    if {![llength [info commands ::molinfo]]} {
+        return
+    }
+    if {[catch {set molids [molinfo list]}]} {
+        return
+    }
+    if {[llength $molids] > 0} {
+        return
+    }
+
+    if {[info exists ::argv] && [llength $::argv] > 0} {
+        return
+    }
+
+    set files [::SDFLoader::startup_sdf_candidates]
+    if {![llength $files]} {
+        return
+    }
+
+    set loaded {}
+    foreach filename $files {
+        if {[catch {set new_molids [::SDFLoader::load $filename molecules]} err]} {
+            puts stderr [format "Warning) Failed to recover startup SDF load for %s: %s" $filename $err]
+            continue
+        }
+        foreach molid $new_molids {
+            lappend loaded $molid
+        }
+    }
+
+    if {[llength $loaded] > 0} {
+        puts [format "Info) Recovered startup SDF load via sdfloader.tcl: %s" [join $files ", "]]
+    }
+}
+
 proc ::SDFLoader::main {argv} {
     set mode molecules
     set args $argv
@@ -1025,3 +1156,4 @@ proc ::sdftrajload {filename} {
 
 ::SDFLoader::install_mol_wrapper
 ::SDFLoader::register_menu
+::SDFLoader::autoload_startup_sdf
