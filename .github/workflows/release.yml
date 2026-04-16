@@ -19,19 +19,38 @@ jobs:
           - name: Linux
             id: linux
             os: ubuntu-latest
+            shell: bash
           - name: macOS
             id: macos
             os: macos-latest
+            shell: bash
+          - name: Windows
+            id: windows
+            os: windows-latest
+            shell: msys2 {0}
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Set up MSYS2
+        if: matrix.target.id == 'windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            make
+            mingw-w64-x86_64-gcc
+            zip
+
       - name: Build plugin
+        shell: ${{ matrix.target.shell }}
         run: make clean all
 
       - name: Package release bundle
         id: package
+        shell: ${{ matrix.target.shell }}
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME}"
@@ -64,11 +83,17 @@ jobs:
           name: release-macos
           path: release-artifacts
 
+      - name: Download Windows bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: release-windows
+          path: release-artifacts
+
       - name: Create checksums
         run: |
           set -euo pipefail
           cd release-artifacts
-          sha256sum *.tar.gz > SHA256SUMS.txt
+          sha256sum * > SHA256SUMS.txt
 
       - name: Ensure GitHub CLI is available
         run: |

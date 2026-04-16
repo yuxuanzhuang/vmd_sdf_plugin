@@ -29,9 +29,12 @@ namespace eval ::SDFLoader {
         No Lr Rf Db Sg Bh Hs Mt Ds Rg
     }
     variable cli_name_fields {NAME Name TITLE Title ID Id}
+    variable gui_last_dir ""
+    variable startup_cwd [pwd]
     variable last_molids {}
     variable menu_registered 0
     variable startup_autoload_done 0
+    variable vmd_packages_ready 0
     variable multimol_types {isissdf sdfmulti sdfmols sdfsplit}
     variable trajectory_type_labels {
         sdf
@@ -689,9 +692,17 @@ proc ::SDFLoader::build_atom_rows {record mol_name} {
 }
 
 proc ::SDFLoader::ensure_vmd_packages {} {
+    variable vmd_packages_ready
+
+    if {$vmd_packages_ready} {
+        return
+    }
+
     if {[catch {package require topotools 1.8} err]} {
         error "topotools 1.8 is required inside VMD: $err"
     }
+
+    set vmd_packages_ready 1
 }
 
 proc ::SDFLoader::is_sdf_filename {filename} {
@@ -912,12 +923,28 @@ proc ::SDFLoader::install_mol_wrapper {} {
 }
 
 proc ::SDFLoader::gui_open {{mode molecules}} {
+    variable gui_last_dir
+    variable startup_cwd
+
+    set initialdir ""
+    if {$gui_last_dir ne "" && [file isdirectory $gui_last_dir]} {
+        set initialdir $gui_last_dir
+    } elseif {$startup_cwd ne "" && [file isdirectory $startup_cwd]} {
+        set initialdir $startup_cwd
+    } elseif {[file isdirectory [pwd]]} {
+        set initialdir [pwd]
+    } elseif {[info exists ::env(HOME)] && [file isdirectory $::env(HOME)]} {
+        set initialdir $::env(HOME)
+    }
+
     set filename [tk_getOpenFile \
         -title "Load SDF File" \
+        -initialdir $initialdir \
         -filetypes {{{SDF Files} {.sdf .sd}} {{All Files} {*}}}]
     if {$filename eq ""} {
         return
     }
+    set gui_last_dir [file dirname $filename]
     ::SDFLoader::load $filename $mode
 }
 
@@ -1009,8 +1036,6 @@ proc ::SDFLoader::append_trajectory_frame {molid record} {
 }
 
 proc ::SDFLoader::build_molecule {record filename record_number} {
-    ::SDFLoader::ensure_vmd_packages
-
     set atoms [dict get $record atoms]
     set bonds [dict get $record bonds]
     set natoms [llength $atoms]
@@ -1045,6 +1070,8 @@ proc ::SDFLoader::build_molecule {record filename record_number} {
 proc ::SDFLoader::load_as_molecules {filename parsed_records} {
     variable last_molids
 
+    ::SDFLoader::ensure_vmd_packages
+
     set molids {}
     set record_number 0
     foreach parsed $parsed_records {
@@ -1058,6 +1085,8 @@ proc ::SDFLoader::load_as_molecules {filename parsed_records} {
 
 proc ::SDFLoader::load_as_trajectory {filename parsed_records} {
     variable last_molids
+
+    ::SDFLoader::ensure_vmd_packages
 
     set record_count [llength $parsed_records]
     if {$record_count == 0} {

@@ -7,9 +7,9 @@ This repository adds SDF support to VMD in two modes:
 - `sdfload` / `Load SDF As Molecules`:
   Loads each SDF record as a separate VMD molecule.
 
-The Tcl loader is the portable/default path. The compiled `molfile/sdfplugin.so` plugin is optional and is only needed for the explicit `SDF (trajectory)` file type.
+The Tcl loader is the portable/default path. The compiled molfile plugin under `molfile/` is optional and is only needed for the explicit `SDF (trajectory)` file type.
 
-For supported macOS and Linux targets, you can download a prebuilt bundle from the GitHub Releases page instead of building locally.
+For supported macOS and Linux targets, you can download a prebuilt bundle from the GitHub Releases page instead of building locally. An experimental Windows bundle is also built in CI, but it has not been runtime-tested with VMD; see [Windows Notes](#windows-notes).
 
 ![Demo](assets/record.gif)
 
@@ -45,6 +45,7 @@ unset -nocomplain sdfplugin_dir
 ```
 
 **This compiled plugin path is not currently supported with VMD 2 on macOS.**
+For Windows, see [Windows Notes](#windows-notes).
 
 Restart VMD after changing `~/.vmdrc`.
 
@@ -56,7 +57,7 @@ If you start VMD directly with an SDF file, for example `vmd example.sdf`, the i
 
 Use this when you want one VMD molecule.
 
-Requires: the compiled `molfile/sdfplugin.so` plugin.
+Requires: the compiled molfile plugin under `molfile/`.
 
 Choose:
 
@@ -125,7 +126,7 @@ set molid [sdftrajload file.sdf]
 
 ### Explicit Trajectory Load Through The Molfile Plugin
 
-Requires: the compiled `molfile/sdfplugin.so` plugin.
+Requires: the compiled molfile plugin under `molfile/`.
 
 ```tcl
 mol new file.sdf type SDF waitfor all
@@ -147,11 +148,11 @@ The project uses two pieces:
 
 ### Build
 
-You do not need to run `make` if [molfile/sdfplugin.so](molfile/sdfplugin.so) already exists for your machine and VMD build.
+You do not need to run `make` if the compiled plugin already exists for your machine and VMD build.
 
 Build only if needed:
 
-- `molfile/sdfplugin.so` is missing
+- the compiled plugin file is missing
 - you changed [src/sdfplugin.cpp](src/sdfplugin.cpp)
 - you are moving to a different OS / architecture / VMD build
 
@@ -161,7 +162,7 @@ Build command:
 make
 ```
 
-The build now uses the vendored VMD plugin headers in [include](include), so GitHub Actions and Linux/macOS local builds do not depend on a hardcoded VMD app path.
+The build now uses the vendored VMD plugin headers in [include](include), so GitHub Actions and local Linux/macOS builds do not depend on a hardcoded VMD app path. For the experimental Windows CI path, see [Windows Notes](#windows-notes).
 
 This creates:
 
@@ -175,7 +176,11 @@ To package a runtime bundle like the release assets:
 make package PACKAGE_VERSION=dev
 ```
 
-This creates a tarball under `dist/`.
+This creates a release archive under `dist/`:
+
+- Linux/macOS: `.tar.gz`
+
+For the experimental Windows CI bundle format, see [Windows Notes](#windows-notes).
 
 ### GitHub Actions / Releases
 
@@ -184,16 +189,16 @@ GitHub Actions now builds the plugin on:
 - Linux
 - macOS
 
-CI runs on every push and pull request through [.github/workflows/ci.yml](.github/workflows/ci.yml) and uploads per-platform tarballs as workflow artifacts.
+CI runs on every push and pull request through [.github/workflows/ci.yml](.github/workflows/ci.yml) and uploads per-platform release bundles as workflow artifacts. An experimental Windows bundle is also built there; see [Windows Notes](#windows-notes).
 
 Tagged releases are handled by [.github/workflows/release.yml](.github/workflows/release.yml):
 
 - create and push a tag like `v1.0.0`
 - GitHub Actions builds the Linux and macOS bundles
 - the workflow creates or updates the matching GitHub Release
-- the release assets include both tarballs and `SHA256SUMS.txt`
+- the release assets include those bundles and `SHA256SUMS.txt`
 
-For supported Linux and macOS targets, users can install from the release bundles without running `make`.
+For supported Linux and macOS targets, users can install from the release bundles without running `make`. For the experimental Windows bundle, see [Windows Notes](#windows-notes).
 
 ### macOS Gatekeeper
 
@@ -272,6 +277,16 @@ set molids [sdfload examples/multi_ligands_mixed.sdf]
 - Common V3000 atom and bond blocks are supported.
 - SD properties such as Open Babel `atom.dprop.PartialCharge` are used to populate per-atom partial charges when present.
 - Bond orders are loaded from the SDF records instead of relying only on VMD bond guessing.
+
+### Windows Notes
+
+Windows support is currently experimental and has not been runtime-tested with VMD.
+
+- GitHub Actions builds a Windows bundle in addition to the Linux/macOS bundles.
+- The Windows bundle contains `molfile/sdfplugin.dll` instead of `molfile/sdfplugin.so`.
+- The Windows release artifact is packaged as a `.zip` instead of a `.tar.gz`.
+- If you want VMD to scan the compiled plugin directory on Windows, use `vmd_plugin_scandirectory $sdfplugin_dir *.dll`.
+- If the compiled plugin path does not work on your Windows VMD build, use `sdfloader.tcl` directly.
 
 ### License
 
