@@ -167,6 +167,22 @@ Tagged releases are handled by [.github/workflows/release.yml](.github/workflows
 
 For supported Linux and macOS targets, users can install from the release bundles without running `make`.
 
+### macOS Gatekeeper
+
+If you download the macOS release bundle, macOS may warn when VMD tries to load `sdfplugin.so`, for example:
+
+```text
+Apple could not verify “sdfplugin.so” is free of malware that may harm your Mac or compromise your privacy.
+```
+
+If that happens:
+
+1. Try loading the plugin once so macOS records the blocked item.
+2. Open `System Settings -> Privacy & Security`.
+3. In the Security section, find the message about `sdfplugin.so`.
+4. Click `Allow Anyway`.
+5. Retry launching VMD or reloading the plugin.
+
 ### Caveat / Limitation
 
 `File -> New Molecule` cannot create multiple VMD molecules from one file through the molfile plugin API.
