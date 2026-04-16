@@ -19,15 +19,12 @@ jobs:
           - name: Linux
             id: linux
             os: ubuntu-latest
-            shell: bash
           - name: macOS
             id: macos
             os: macos-latest
-            shell: bash
           - name: Windows
             id: windows
             os: windows-latest
-            shell: msys2 {0}
 
     steps:
       - name: Check out repository
@@ -44,13 +41,29 @@ jobs:
             mingw-w64-x86_64-gcc
             zip
 
-      - name: Build plugin
-        shell: ${{ matrix.target.shell }}
+      - name: Build plugin (Linux/macOS)
+        if: matrix.target.id != 'windows'
         run: make clean all
 
-      - name: Package release bundle
-        id: package
-        shell: ${{ matrix.target.shell }}
+      - name: Build plugin (Windows)
+        if: matrix.target.id == 'windows'
+        shell: msys2 {0}
+        run: make clean all
+
+      - name: Package release bundle (Linux/macOS)
+        if: matrix.target.id != 'windows'
+        id: package_unix
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME}"
+          make package PACKAGE_VERSION="${version}"
+          archive="$(make --silent print-package-file PACKAGE_VERSION="${version}")"
+          echo "archive=${archive}" >> "${GITHUB_OUTPUT}"
+
+      - name: Package release bundle (Windows)
+        if: matrix.target.id == 'windows'
+        id: package_windows
+        shell: msys2 {0}
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME}"
@@ -62,7 +75,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.target.id }}
-          path: ${{ steps.package.outputs.archive }}
+          path: ${{ steps.package_unix.outputs.archive || steps.package_windows.outputs.archive }}
           if-no-files-found: error
 
   publish:
