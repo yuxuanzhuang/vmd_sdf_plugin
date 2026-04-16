@@ -14,9 +14,12 @@ rm -rf "${stage_dir}" "${archive_path}"
 mkdir -p "${stage_dir}/molfile"
 
 cp "${repo_root}/README.md" "${stage_dir}/"
+cp "${repo_root}/LICENSE" "${stage_dir}/"
+cp "${repo_root}/THIRD_PARTY_NOTICES.md" "${stage_dir}/"
 cp "${repo_root}/molfile/sdfplugin.so" "${stage_dir}/molfile/"
 cp -R "${repo_root}/sdfloader1.0" "${stage_dir}/"
 cp -R "${repo_root}/examples" "${stage_dir}/"
+cp -R "${repo_root}/LICENSES" "${stage_dir}/"
 
 tar -czf "${archive_path}" -C "${dist_dir}" "${package_name}"
 printf '%s\n' "${archive_path}"

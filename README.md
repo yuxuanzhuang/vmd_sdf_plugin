@@ -217,3 +217,9 @@ set molids [sdfload examples/multi_ligands_mixed.sdf]
 - Common V3000 atom and bond blocks are supported.
 - SD properties such as Open Babel `atom.dprop.PartialCharge` are used to populate per-atom partial charges when present.
 - Bond orders are loaded from the SDF records instead of relying only on VMD bond guessing.
+
+### License
+
+The original code in this repository is licensed under the MIT License in [LICENSE](LICENSE).
+
+Vendored VMD plugin headers in [include](include) retain their original UIUC Open Source License terms. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [LICENSES/UIUC-Open-Source-License.txt](LICENSES/UIUC-Open-Source-License.txt).
