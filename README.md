@@ -1,4 +1,4 @@
-# VMD SDF Loader
+# VMD SDF Loader plugin
 
 This repository adds SDF support to VMD in two modes:
 
@@ -10,6 +10,8 @@ This repository adds SDF support to VMD in two modes:
 The Tcl loader is the portable/default path. The compiled `molfile/sdfplugin.so` plugin is optional and is only needed for the explicit `SDF (trajectory)` file type.
 
 For supported macOS and Linux targets, you can download a prebuilt bundle from the GitHub Releases page instead of building locally.
+
+![Demo](assets/record.gif)
 
 ## 1. Add It To `~/.vmdrc`
 
