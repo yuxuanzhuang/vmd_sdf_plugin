@@ -199,24 +199,15 @@ So:
 
 ### Test Files
 
-Example SDFs are provided in [examples](examples):
+Example SDFs are documented in [examples/README.md](examples/README.md).
 
-- [examples/example.sdf](examples/example.sdf):
-  mixed small records
-- [examples/ligand_with_charge.sdf](examples/ligand_with_charge.sdf):
-  Open Babel-style `atom.dprop.PartialCharge` property with one partial charge per atom
-- [examples/multi_ligands_frames.sdf](examples/multi_ligands_frames.sdf):
-  multiple compatible records for trajectory mode
-- [examples/multi_ligands_mixed.sdf](examples/multi_ligands_mixed.sdf):
-  mixed topology / atom counts for split-molecule tests
-
-Try:
+Quick checks:
 
 ```tcl
 mol new examples/multi_ligands_frames.sdf type SDF
 ```
 
-and:
+and
 
 ```tcl
 set molids [sdfload examples/multi_ligands_mixed.sdf]
@@ -238,4 +229,6 @@ Vendored VMD plugin headers in [include](include) retain their original UIUC Ope
 
 ### AI Disclosure
 
-Most of this project, including the code, documentation, and workflow changes, was developed with assistance from AI coding tools and has not yet been reviewed or edited by the repository maintainer.
+Most of this project, including code, documentation, and CI/release workflow changes, was developed with substantial assistance from OpenAI Codex / ChatGPT (GPT-5-class models).
+
+The generated work should be treated as maintainer-curated source and reviewed accordingly.
