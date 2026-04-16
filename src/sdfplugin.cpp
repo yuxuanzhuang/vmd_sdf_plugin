@@ -67,7 +67,7 @@ struct SDFData {
   float *bond_order = nullptr;
 };
 
-static molfile_plugin_t plugin;
+static molfile_plugin_t trajectory_plugin;
 
 static std::string trim(const std::string &value) {
   size_t start = 0;
@@ -234,6 +234,38 @@ static std::string sanitize_resname(const std::string &name) {
   }
   if (out.empty()) out = "MOL";
   return out;
+}
+
+static bool same_atom_topology(const Record &lhs, const Record &rhs) {
+  if (lhs.atoms.size() != rhs.atoms.size()) return false;
+  for (size_t i = 0; i < lhs.atoms.size(); ++i) {
+    if (lhs.atoms[i].element != rhs.atoms[i].element) return false;
+  }
+  return true;
+}
+
+static std::vector<std::string> bond_signature(const Record &record) {
+  std::vector<std::string> signature;
+  signature.reserve(record.bonds.size());
+  for (const auto &bond : record.bonds) {
+    const int low = std::min(bond.from, bond.to);
+    const int high = std::max(bond.from, bond.to);
+    char buffer[64];
+    std::snprintf(buffer, sizeof(buffer), "%d:%d:%.3f", low, high, bond.order);
+    signature.emplace_back(buffer);
+  }
+  std::sort(signature.begin(), signature.end());
+  return signature;
+}
+
+static bool same_bond_topology(const Record &lhs, const Record &rhs) {
+  if (lhs.bonds.size() != rhs.bonds.size()) return false;
+  return bond_signature(lhs) == bond_signature(rhs);
+}
+
+static bool is_trajectory_compatible(const Record &reference, const Record &candidate) {
+  return same_atom_topology(reference, candidate) &&
+         same_bond_topology(reference, candidate);
 }
 
 static bool parse_property_name(const std::vector<std::string> &lines, size_t start,
@@ -578,7 +610,8 @@ static void *open_file_read(const char *filepath, const char * /*filetype*/,
     return nullptr;
   }
 
-  const size_t first_natoms = data->records.front().atoms.size();
+  const Record &reference = data->records.front();
+  const size_t first_natoms = reference.atoms.size();
   if (first_natoms == 0) {
     std::fprintf(stderr, "sdfplugin) first record has no atoms: %s\n",
                  data->filepath.c_str());
@@ -587,17 +620,17 @@ static void *open_file_read(const char *filepath, const char * /*filetype*/,
   }
 
   for (size_t i = 0; i < data->records.size(); ++i) {
-    if (data->records[i].atoms.size() == first_natoms) {
+    if (is_trajectory_compatible(reference, data->records[i])) {
       data->timestep_record_indices.push_back(i);
     }
   }
 
   if (data->timestep_record_indices.size() != data->records.size()) {
     std::fprintf(stderr,
-                 "sdfplugin) warning: only %zu/%zu records have %zu atoms; "
-                 "variable-size records will be ignored as extra frames.\n",
-                 data->timestep_record_indices.size(), data->records.size(),
-                 first_natoms);
+                 "sdfplugin) warning: only %zu/%zu records match the first "
+                 "record topology; incompatible records will be ignored as "
+                 "extra frames.\n",
+                 data->timestep_record_indices.size(), data->records.size());
   }
 
   *natoms = static_cast<int>(first_natoms);
@@ -722,15 +755,16 @@ static void close_file_read(void *v) {
   delete data;
 }
 
-static void init_plugin() {
+static void configure_plugin(molfile_plugin_t &plugin, const char *name,
+                             const char *prettyname) {
   std::memset(&plugin, 0, sizeof(plugin));
   plugin.abiversion = vmdplugin_ABIVERSION;
   plugin.type = MOLFILE_PLUGIN_TYPE;
-  plugin.name = "SDF";
-  plugin.prettyname = "Structure Data File";
+  plugin.name = name;
+  plugin.prettyname = prettyname;
   plugin.author = "OpenAI";
   plugin.majorv = 0;
-  plugin.minorv = 1;
+  plugin.minorv = 2;
   plugin.is_reentrant = VMDPLUGIN_THREADSAFE;
   plugin.filename_extension = "sdf,sd";
   plugin.open_file_read = open_file_read;
@@ -738,6 +772,11 @@ static void init_plugin() {
   plugin.read_bonds = read_bonds;
   plugin.read_next_timestep = read_next_timestep;
   plugin.close_file_read = close_file_read;
+}
+
+static void init_plugin() {
+  configure_plugin(trajectory_plugin, "SDF",
+                   "Structure Data File SDF (trajectory)");
 }
 
 }  // namespace
@@ -748,7 +787,7 @@ VMDPLUGIN_EXTERN int VMDPLUGIN_init() {
 }
 
 VMDPLUGIN_EXTERN int VMDPLUGIN_register(void *v, vmdplugin_register_cb cb) {
-  return (*cb)(v, reinterpret_cast<vmdplugin_t *>(&plugin));
+  return (*cb)(v, reinterpret_cast<vmdplugin_t *>(&trajectory_plugin));
 }
 
 VMDPLUGIN_EXTERN int VMDPLUGIN_fini() {

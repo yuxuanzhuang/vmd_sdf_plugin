@@ -2,10 +2,18 @@
 # Interactive usage:
 #   source sdfloader1.0/sdfloader.tcl
 #   set molids [sdfload path/to/file.sdf]
+#   set molid  [sdfload -mode trajectory path/to/file.sdf]
 #
 # If sourced from ~/.vmdrc, standard VMD loads such as
 #   mol new path/to/file.sdf
-# are intercepted and handled by this script.
+# default to multiple molecules, while
+#   mol new path/to/file.sdf type SDF
+# uses the compiled trajectory plugin and
+#   mol new path/to/file.sdf type SDFMulti
+# forces split-record loading through this script.
+#
+# In the VMD GUI, "File -> New Molecule" can only load the trajectory mode.
+# Multi-molecule loading is available through the SDFLoader menu entries.
 
 package provide sdfloader 1.0
 
@@ -23,6 +31,22 @@ namespace eval ::SDFLoader {
     variable cli_name_fields {NAME Name TITLE Title ID Id}
     variable last_molids {}
     variable menu_registered 0
+    variable multimol_types {isissdf sdfmulti sdfmols sdfsplit}
+    variable trajectory_type_labels {
+        sdf
+        {structure data file}
+        {structure data file (trajectory)}
+        {structure data file sdf}
+        {structure data file sdf (trajectory)}
+    }
+    variable multimol_type_labels {
+        isissdf
+        sdfmulti
+        sdfmols
+        sdfsplit
+        {structure data file (multiple molecule)}
+        {structure data file (multiple molecules)}
+    }
 }
 
 proc ::SDFLoader::split_records {filename} {
@@ -547,8 +571,38 @@ proc ::SDFLoader::is_sdf_filename {filename} {
 }
 
 proc ::SDFLoader::is_sdf_type {type} {
+    variable trajectory_type_labels
+
     set normalized [string tolower [string trim $type]]
-    return [expr {$normalized in {isissdf sdf sd}}]
+    return [expr {$normalized in $trajectory_type_labels}]
+}
+
+proc ::SDFLoader::is_multimol_type {type} {
+    variable multimol_type_labels
+
+    set normalized [string tolower [string trim $type]]
+    return [expr {$normalized in $multimol_type_labels}]
+}
+
+proc ::SDFLoader::normalize_mode {mode} {
+    set normalized [string tolower [string trim $mode]]
+    switch -- $normalized {
+        molecule -
+        molecules -
+        multi -
+        multimol -
+        multimolecule -
+        multimolecules {
+            return molecules
+        }
+        frame -
+        frames -
+        trajectory -
+        traj {
+            return trajectory
+        }
+    }
+    error "unsupported SDF load mode '$mode': expected molecules or trajectory"
 }
 
 proc ::SDFLoader::extract_type_option {args} {
@@ -566,35 +620,48 @@ proc ::SDFLoader::extract_type_option {args} {
     return ""
 }
 
-proc ::SDFLoader::should_intercept_mol {subcmd args} {
+proc ::SDFLoader::requested_mode {subcmd args} {
     if {$subcmd ni {new addfile}} {
-        return 0
+        return ""
     }
     if {[llength $args] == 0} {
-        return 0
+        return ""
     }
 
     set target [lindex $args 0]
     if {[string equal -nocase $target "atoms"]} {
-        return 0
+        return ""
     }
 
     set type [::SDFLoader::extract_type_option {*}[lrange $args 1 end]]
     if {$type ne ""} {
-        set normalized [string tolower [string trim $type]]
-        if {$normalized eq "sdf"} {
-            return 0
+        if {[::SDFLoader::is_multimol_type $type]} {
+            return molecules
         }
-        return [::SDFLoader::is_sdf_type $type]
+        if {[::SDFLoader::is_sdf_type $type]} {
+            return trajectory
+        }
+        return ""
     }
 
-    return [::SDFLoader::is_sdf_filename $target]
+    if {[::SDFLoader::is_sdf_filename $target]} {
+        return molecules
+    }
+
+    return ""
 }
 
-proc ::SDFLoader::handle_mol_new_sdf {filename} {
+proc ::SDFLoader::handle_mol_new_sdf {filename {mode molecules}} {
     variable last_molids
 
-    set last_molids [::SDFLoader::load $filename]
+    set mode [::SDFLoader::normalize_mode $mode]
+    set result [::SDFLoader::load $filename $mode]
+    if {$mode eq "trajectory"} {
+        set last_molids [list $result]
+        return $result
+    }
+
+    set last_molids $result
     if {[llength $last_molids] > 1} {
         puts [format "Info) SDF import created %d molecules from %s" [llength $last_molids] [file tail $filename]]
     }
@@ -609,14 +676,36 @@ proc ::SDFLoader::mol_dispatch {args} {
     set subcmd [lindex $args 0]
     set subargs [lrange $args 1 end]
 
-    if {![::SDFLoader::should_intercept_mol $subcmd {*}$subargs]} {
+    set mode [::SDFLoader::requested_mode $subcmd {*}$subargs]
+    if {$mode eq ""} {
         return [uplevel 1 [list ::SDFLoader::core_mol {*}$args]]
     }
 
     set filename [lindex $subargs 0]
     switch -- $subcmd {
         new {
-            return [::SDFLoader::handle_mol_new_sdf $filename]
+            if {$mode eq "trajectory"} {
+                set rewritten {}
+                set skip_next 0
+                foreach arg $subargs {
+                    if {$skip_next} {
+                        lappend rewritten SDF
+                        set skip_next 0
+                        continue
+                    }
+                    if {[string equal -nocase $arg type]} {
+                        lappend rewritten $arg
+                        set skip_next 1
+                        continue
+                    }
+                    lappend rewritten $arg
+                }
+                if {!$skip_next} {
+                    return [uplevel 1 [list ::SDFLoader::core_mol new {*}$rewritten]]
+                }
+                return -code error "missing value after 'type' option"
+            }
+            return [::SDFLoader::handle_mol_new_sdf $filename $mode]
         }
         addfile {
             return -code error "SDF import is only supported through 'mol new' or 'sdfload'; 'mol addfile' cannot append SDF records to an existing molecule."
@@ -626,28 +715,81 @@ proc ::SDFLoader::mol_dispatch {args} {
     return [uplevel 1 [list ::SDFLoader::core_mol {*}$args]]
 }
 
-proc ::SDFLoader::install_mol_wrapper {} {
-    if {![llength [info commands ::mol]]} {
-        return
+proc ::SDFLoader::molecule_dispatch {args} {
+    if {[llength $args] == 0} {
+        return [uplevel 1 [list ::SDFLoader::core_molecule]]
     }
-    if {[llength [info commands ::SDFLoader::core_mol]]} {
+
+    set subcmd [lindex $args 0]
+    set subargs [lrange $args 1 end]
+
+    set mode [::SDFLoader::requested_mode $subcmd {*}$subargs]
+    if {$mode eq ""} {
+        return [uplevel 1 [list ::SDFLoader::core_molecule {*}$args]]
+    }
+
+    set filename [lindex $subargs 0]
+    switch -- $subcmd {
+        new {
+            if {$mode eq "trajectory"} {
+                set rewritten {}
+                set skip_next 0
+                foreach arg $subargs {
+                    if {$skip_next} {
+                        lappend rewritten SDF
+                        set skip_next 0
+                        continue
+                    }
+                    if {[string equal -nocase $arg type]} {
+                        lappend rewritten $arg
+                        set skip_next 1
+                        continue
+                    }
+                    lappend rewritten $arg
+                }
+                if {!$skip_next} {
+                    return [uplevel 1 [list ::SDFLoader::core_molecule new {*}$rewritten]]
+                }
+                return -code error "missing value after 'type' option"
+            }
+            return [::SDFLoader::handle_mol_new_sdf $filename $mode]
+        }
+        addfile {
+            return -code error "SDF import is only supported through 'mol new' or 'sdfload'; 'mol addfile' cannot append SDF records to an existing molecule."
+        }
+    }
+
+    return [uplevel 1 [list ::SDFLoader::core_molecule {*}$args]]
+}
+
+proc ::SDFLoader::install_mol_wrapper {} {
+    if {![llength [info commands ::mol]] || ![llength [info commands ::molecule]]} {
         return
     }
 
-    rename ::mol ::SDFLoader::core_mol
-    proc ::mol {args} {
-        return [uplevel 1 [list ::SDFLoader::mol_dispatch {*}$args]]
+    if {![llength [info commands ::SDFLoader::core_mol]]} {
+        rename ::mol ::SDFLoader::core_mol
+        proc ::mol {args} {
+            return [uplevel 1 [list ::SDFLoader::mol_dispatch {*}$args]]
+        }
+    }
+
+    if {![llength [info commands ::SDFLoader::core_molecule]]} {
+        rename ::molecule ::SDFLoader::core_molecule
+        proc ::molecule {args} {
+            return [uplevel 1 [list ::SDFLoader::molecule_dispatch {*}$args]]
+        }
     }
 }
 
-proc ::SDFLoader::gui_open {} {
+proc ::SDFLoader::gui_open {{mode molecules}} {
     set filename [tk_getOpenFile \
         -title "Load SDF File" \
         -filetypes {{{SDF Files} {.sdf .sd}} {{All Files} {*}}}]
     if {$filename eq ""} {
         return
     }
-    ::SDFLoader::load $filename
+    ::SDFLoader::load $filename $mode
 }
 
 proc ::SDFLoader::register_menu {} {
@@ -663,9 +805,78 @@ proc ::SDFLoader::register_menu {} {
         return
     }
 
-    if {![catch {menu tk register sdfloadgui ::SDFLoader::gui_open "Data/Load SDF"}]} {
-        set menu_registered 1
+    catch {menu tk register sdfloadgui_multi [list ::SDFLoader::gui_open molecules] "Data/Load SDF As Molecules"}
+    catch {menu tk register sdfloadgui_traj [list ::SDFLoader::gui_open trajectory] "Data/Load SDF As Trajectory"}
+    set menu_registered 1
+}
+
+proc ::SDFLoader::parse_file_records {filename} {
+    set normalized [file normalize $filename]
+    if {![file exists $normalized]} {
+        error "file not found: $filename"
     }
+
+    set record_lines_list [::SDFLoader::split_records $normalized]
+    if {[llength $record_lines_list] == 0} {
+        error "no SDF records found in $filename"
+    }
+
+    set parsed_records {}
+    set record_number 0
+    foreach record_lines $record_lines_list {
+        incr record_number
+        if {[catch {
+            lappend parsed_records [::SDFLoader::parse_record $record_lines]
+        } err opts]} {
+            return -options $opts [list $normalized $record_number $err]
+        }
+    }
+
+    return [list $normalized $parsed_records]
+}
+
+proc ::SDFLoader::build_xyz_rows {record} {
+    set rows {}
+    foreach atom [dict get $record atoms] {
+        lappend rows [list [dict get $atom x] [dict get $atom y] [dict get $atom z]]
+    }
+    return $rows
+}
+
+proc ::SDFLoader::bond_signature {record} {
+    set signature {}
+    foreach bond [dict get $record bonds] {
+        lassign $bond atom1 atom2 _type order
+        if {$atom1 > $atom2} {
+            lassign [list $atom2 $atom1] atom1 atom2
+        }
+        lappend signature [format "%d:%d:%.3f" $atom1 $atom2 $order]
+    }
+    return [lsort -dictionary $signature]
+}
+
+proc ::SDFLoader::trajectory_compatible {reference candidate} {
+    set ref_atoms [dict get $reference atoms]
+    set cand_atoms [dict get $candidate atoms]
+    if {[llength $ref_atoms] != [llength $cand_atoms]} {
+        return 0
+    }
+
+    for {set i 0} {$i < [llength $ref_atoms]} {incr i} {
+        if {[dict get [lindex $ref_atoms $i] element] ne [dict get [lindex $cand_atoms $i] element]} {
+            return 0
+        }
+    }
+
+    return [expr {[::SDFLoader::bond_signature $reference] eq [::SDFLoader::bond_signature $candidate]}]
+}
+
+proc ::SDFLoader::append_trajectory_frame {molid record} {
+    animate dup $molid
+    set frame [expr {[molinfo $molid get numframes] - 1}]
+    set sel [atomselect $molid all frame $frame]
+    $sel set {x y z} [::SDFLoader::build_xyz_rows $record]
+    $sel delete
 }
 
 proc ::SDFLoader::build_molecule {record filename record_number} {
@@ -702,49 +913,114 @@ proc ::SDFLoader::build_molecule {record filename record_number} {
     return $molid
 }
 
-proc ::SDFLoader::load {filename} {
+proc ::SDFLoader::load_as_molecules {filename parsed_records} {
     variable last_molids
-
-    set normalized [file normalize $filename]
-    if {![file exists $normalized]} {
-        error "file not found: $filename"
-    }
-
-    set records [::SDFLoader::split_records $normalized]
-    if {[llength $records] == 0} {
-        error "no SDF records found in $filename"
-    }
 
     set molids {}
     set record_number 0
-    foreach record_lines $records {
+    foreach parsed $parsed_records {
         incr record_number
-        if {[catch {
-            set parsed [::SDFLoader::parse_record $record_lines]
-            lappend molids [::SDFLoader::build_molecule $parsed $normalized $record_number]
-        } err opts]} {
-            return -options $opts "failed to load record $record_number from $filename: $err"
-        }
+        lappend molids [::SDFLoader::build_molecule $parsed $filename $record_number]
     }
 
     set last_molids $molids
     return $molids
 }
 
+proc ::SDFLoader::load_as_trajectory {filename parsed_records} {
+    variable last_molids
+
+    set record_count [llength $parsed_records]
+    if {$record_count == 0} {
+        error "no SDF records found in $filename"
+    }
+
+    set reference [lindex $parsed_records 0]
+    set molid [::SDFLoader::build_molecule $reference $filename 1]
+    set kept 1
+    set skipped {}
+
+    for {set i 1} {$i < $record_count} {incr i} {
+        set record [lindex $parsed_records $i]
+        if {![::SDFLoader::trajectory_compatible $reference $record]} {
+            lappend skipped [expr {$i + 1}]
+            continue
+        }
+        ::SDFLoader::append_trajectory_frame $molid $record
+        incr kept
+    }
+
+    set last_molids [list $molid]
+    if {$kept > 1 || [llength $skipped] > 0} {
+        puts [format "Info) SDF trajectory import kept %d/%d records as frames from %s" $kept $record_count [file tail $filename]]
+    }
+    if {[llength $skipped] > 0} {
+        puts [format "Info) Skipped incompatible SDF records: %s" [join $skipped ", "]]
+    }
+
+    return $molid
+}
+
+proc ::SDFLoader::load {filename {mode molecules}} {
+    set mode [::SDFLoader::normalize_mode $mode]
+
+    set parsed_info [::SDFLoader::parse_file_records $filename]
+    if {[llength $parsed_info] == 3} {
+        lassign $parsed_info normalized record_number parse_error
+        error "failed to load record $record_number from $filename: $parse_error"
+    }
+    lassign $parsed_info normalized parsed_records
+
+    switch -- $mode {
+        molecules {
+            return [::SDFLoader::load_as_molecules $normalized $parsed_records]
+        }
+        trajectory {
+            return [::SDFLoader::load_as_trajectory $normalized $parsed_records]
+        }
+    }
+
+    error "unsupported SDF load mode '$mode'"
+}
+
 proc ::SDFLoader::main {argv} {
-    if {[llength $argv] < 1} {
-        puts stderr "usage: vmd -dispdev text -e sdfloader.tcl -args <file.sdf>"
+    set mode molecules
+    set args $argv
+    if {[llength $args] >= 2 && [string equal -nocase [lindex $args 0] "-mode"]} {
+        set mode [::SDFLoader::normalize_mode [lindex $args 1]]
+        set args [lrange $args 2 end]
+    }
+
+    if {[llength $args] < 1} {
+        puts stderr "usage: vmd -dispdev text -e sdfloader.tcl -args ?-mode molecules|trajectory? <file.sdf>"
         return 1
     }
 
-    set filename [lindex $argv 0]
-    set molids [::SDFLoader::load $filename]
-    puts [format "Loaded %d SDF record(s): %s" [llength $molids] [join $molids ", "]]
+    set filename [lindex $args 0]
+    set result [::SDFLoader::load $filename $mode]
+    if {$mode eq "trajectory"} {
+        puts [format "Loaded SDF trajectory molid: %s" $result]
+    } else {
+        puts [format "Loaded %d SDF record(s): %s" [llength $result] [join $result ", "]]
+    }
     return 0
 }
 
-proc ::sdfload {filename} {
-    return [::SDFLoader::load $filename]
+proc ::sdfload {args} {
+    set mode molecules
+    set params $args
+    if {[llength $params] >= 2 && [string equal -nocase [lindex $params 0] "-mode"]} {
+        set mode [::SDFLoader::normalize_mode [lindex $params 1]]
+        set params [lrange $params 2 end]
+    }
+    if {[llength $params] != 1} {
+        error "usage: sdfload ?-mode molecules|trajectory? <file.sdf>"
+    }
+    return [::SDFLoader::load [lindex $params 0] $mode]
+}
+
+proc ::sdftrajload {filename} {
+    return [::SDFLoader::load $filename trajectory]
 }
 
 ::SDFLoader::install_mol_wrapper
