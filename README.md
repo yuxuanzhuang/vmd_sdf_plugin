@@ -135,11 +135,39 @@ Build command:
 make
 ```
 
+The build now uses the vendored VMD plugin headers in [include](include), so GitHub Actions and Linux/macOS local builds do not depend on a hardcoded VMD app path.
+
 This creates:
 
 ```text
 molfile/sdfplugin.so
 ```
+
+To package a runtime bundle like the release assets:
+
+```sh
+make package PACKAGE_VERSION=dev
+```
+
+This creates a tarball under `dist/`.
+
+### GitHub Actions / Releases
+
+GitHub Actions now builds the plugin on:
+
+- Linux
+- macOS
+
+CI runs on every push and pull request through [.github/workflows/ci.yml](.github/workflows/ci.yml) and uploads per-platform tarballs as workflow artifacts.
+
+Tagged releases are handled by [.github/workflows/release.yml](.github/workflows/release.yml):
+
+- create and push a tag like `v1.0.0`
+- GitHub Actions builds the Linux and macOS bundles
+- the workflow creates or updates the matching GitHub Release
+- the release assets include both tarballs and `SHA256SUMS.txt`
+
+For supported Linux and macOS targets, users can install from the release bundles without running `make`.
 
 ### Caveat / Limitation
 

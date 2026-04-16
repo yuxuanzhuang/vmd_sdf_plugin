@@ -1,0 +1,94 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build release bundle ${{ matrix.target.name }}
+    runs-on: ${{ matrix.target.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - name: Linux
+            id: linux
+            os: ubuntu-latest
+          - name: macOS
+            id: macos
+            os: macos-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build plugin
+        run: make clean all
+
+      - name: Package release bundle
+        id: package
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME}"
+          make package PACKAGE_VERSION="${version}"
+          archive="$(make --silent print-package-file PACKAGE_VERSION="${version}")"
+          echo "archive=${archive}" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target.id }}
+          path: ${{ steps.package.outputs.archive }}
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub release
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Download Linux bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: release-linux
+          path: release-artifacts
+
+      - name: Download macOS bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: release-macos
+          path: release-artifacts
+
+      - name: Create checksums
+        run: |
+          set -euo pipefail
+          cd release-artifacts
+          sha256sum *.tar.gz > SHA256SUMS.txt
+
+      - name: Ensure GitHub CLI is available
+        run: |
+          set -euo pipefail
+          if ! command -v gh >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y gh
+          fi
+
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          title="VMD SDF Loader ${tag}"
+          notes="Prebuilt runtime bundles for ${tag}. Each archive contains the compiled molfile plugin, Tcl loader, README, and example SDF files."
+
+          if gh release view "${tag}" >/dev/null 2>&1; then
+            gh release upload "${tag}" release-artifacts/* --clobber
+          else
+            gh release create "${tag}" release-artifacts/* --title "${title}" --notes "${notes}"
+          fi

@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    tags-ignore:
+      - "v*"
+  pull_request:
+
+jobs:
+  build:
+    name: Build ${{ matrix.target.name }}
+    runs-on: ${{ matrix.target.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - name: Linux
+            id: linux
+            os: ubuntu-latest
+          - name: macOS
+            id: macos
+            os: macos-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build plugin
+        run: make clean all
+
+      - name: Package runtime bundle
+        id: package
+        run: |
+          set -euo pipefail
+          version="ci-${GITHUB_SHA::7}"
+          make package PACKAGE_VERSION="${version}"
+          archive="$(make --silent print-package-file PACKAGE_VERSION="${version}")"
+          echo "archive=${archive}" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdf-plugin-${{ matrix.target.id }}
+          path: ${{ steps.package.outputs.archive }}
+          if-no-files-found: error
