@@ -53,23 +53,45 @@ If you start VMD directly with an SDF file, for example `vmd example.sdf`, the i
 
 ## 2. Use It With The GUI
 
+### Multiple-Molecule Mode
+
+Use this when one SDF file contains many ligands and you want one VMD molecule per record.
+
+Requires: `sdfloader.tcl` only. The compiled `.so` is not required.
+
+GUI:
+
+- `Extensions -> Data -> Load SDF As Molecules`
+
 ### Trajectory Mode
 
 Use this when you want one VMD molecule.
 
-Requires: the compiled molfile plugin under `molfile/`.
+Tcl GUI path:
 
-Choose:
+Requires: `sdfloader.tcl` only. The compiled plugin is not required.
 
-- `Structure Data File SDF (trajectory)`
+- `Extensions -> Data -> Load SDF As Trajectory`
 
-This uses the compiled plugin and will:
+This path will:
 
 - load the first record as structure
 - load later records as frames only if atom sequence and bond topology match
 - skip incompatible records
 
-Equivalent console command:
+Compiled molfile path:
+
+Requires: the compiled molfile plugin under `molfile/`.
+
+- `File -> New Molecule -> Structure Data File SDF (trajectory)`
+
+This path also will:
+
+- load the first record as structure
+- load later records as frames only if atom sequence and bond topology match
+- skip incompatible records
+
+Equivalent console commands:
 
 ```tcl
 molecule new file.sdf type {Structure Data File SDF (trajectory)} waitfor all
@@ -80,16 +102,6 @@ or:
 ```tcl
 mol new file.sdf type SDF waitfor all
 ```
-
-### Multiple-Molecule Mode
-
-Use this when one SDF file contains many ligands and you want one VMD molecule per record.
-
-Requires: `sdfloader.tcl` only. The compiled `.so` is not required.
-
-GUI:
-
-- `Extensions -> Data -> Load SDF As Molecules`
 
 ## 3. Use It With Tcl
 
