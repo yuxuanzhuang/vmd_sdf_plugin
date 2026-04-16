@@ -7,6 +7,13 @@ This repository adds SDF support to VMD in two modes:
 - `sdfload` / `Load SDF As Molecules`:
   Loads each SDF record as a separate VMD molecule.
 
+For supported macOS and Linux targets, you can download a prebuilt bundle from the GitHub Releases page instead of building locally. Each release bundle includes:
+
+- `molfile/sdfplugin.so`
+- `sdfloader1.0/`
+- `examples/`
+- license files and notices
+
 ## 1. Add It To `~/.vmdrc`
 
 To make VMD see the plugin and Tcl loader at startup, add this to `~/.vmdrc`:
