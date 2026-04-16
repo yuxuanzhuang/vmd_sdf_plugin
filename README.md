@@ -7,16 +7,31 @@ This repository adds SDF support to VMD in two modes:
 - `sdfload` / `Load SDF As Molecules`:
   Loads each SDF record as a separate VMD molecule.
 
-For supported macOS and Linux targets, you can download a prebuilt bundle from the GitHub Releases page instead of building locally. Each release bundle includes:
+The Tcl loader is the portable/default path. The compiled `molfile/sdfplugin.so` plugin is optional and is only needed for the explicit `SDF (trajectory)` file type.
 
-- `molfile/sdfplugin.so`
-- `sdfloader1.0/`
-- `examples/`
-- license files and notices
+For supported macOS and Linux targets, you can download a prebuilt bundle from the GitHub Releases page instead of building locally.
 
 ## 1. Add It To `~/.vmdrc`
 
-To make VMD see the plugin and Tcl loader at startup, add this to `~/.vmdrc`:
+To make VMD see the Tcl loader at startup, add this to `~/.vmdrc`:
+
+```tcl
+source /absolute/path/to/vmd_sdf_plugin/sdfloader1.0/sdfloader.tcl
+```
+
+This is enough for:
+
+- `sdfload file.sdf`
+- `sdftrajload file.sdf`
+- `mol new file.sdf`
+- `molecule new file.sdf`
+- `Extensions -> Data -> Load SDF`
+
+Adding the compiled `molfile/` plugin directory is optional. Only add this if you also want:
+
+- `File -> New Molecule -> Structure Data File SDF (trajectory)`
+- `mol new file.sdf type SDF`
+- `molecule new file.sdf type {Structure Data File SDF (trajectory)}`
 
 ```tcl
 set sdfplugin_dir /absolute/path/to/vmd_sdf_plugin/molfile
@@ -25,8 +40,9 @@ if {[llength [info commands vmd_plugin_scandirectory]] && [file isdirectory $sdf
 }
 unset -nocomplain sdfplugin_dir
 
-source /absolute/path/to/vmd_sdf_plugin/sdfloader1.0/sdfloader.tcl
 ```
+
+**This compiled plugin path is not currently supported with VMD 2 on macOS.**
 
 Restart VMD after changing `~/.vmdrc`.
 
@@ -37,6 +53,8 @@ If you start VMD directly with an SDF file, for example `vmd example.sdf`, the i
 ### Trajectory Mode
 
 Use this when you want one VMD molecule.
+
+Requires: the compiled `molfile/sdfplugin.so` plugin.
 
 Choose:
 
@@ -64,6 +82,8 @@ mol new file.sdf type SDF waitfor all
 
 Use this when one SDF file contains many ligands and you want one VMD molecule per record.
 
+Requires: `sdfloader.tcl` only. The compiled `.so` is not required.
+
 GUI:
 
 - `Extensions -> Data -> Load SDF As Molecules`
@@ -71,6 +91,8 @@ GUI:
 ## 3. Use It With Tcl
 
 ### Load Every SDF Record As A Separate Molecule
+
+Requires: `sdfloader.tcl` only. The compiled `.so` is not required.
 
 ```tcl
 set molids [sdfload file.sdf]
@@ -87,6 +109,8 @@ molecule new file.sdf
 
 ### Force Trajectory Mode
 
+Requires: `sdfloader.tcl` only. The compiled `.so` is not required.
+
 ```tcl
 set molid [sdfload -mode trajectory file.sdf]
 ```
@@ -98,6 +122,8 @@ set molid [sdftrajload file.sdf]
 ```
 
 ### Explicit Trajectory Load Through The Molfile Plugin
+
+Requires: the compiled `molfile/sdfplugin.so` plugin.
 
 ```tcl
 mol new file.sdf type SDF waitfor all
@@ -183,6 +209,26 @@ If that happens:
 4. Click `Allow Anyway`.
 5. Retry launching VMD or reloading the plugin.
 
+### VMD 2 On macOS
+
+VMD 2 on macOS is not currently supported for the compiled `molfile/sdfplugin.so` plugin. Newer macOS code-signing and library-validation rules can prevent VMD 2 from loading an external `.so` even when `Allow Anyway` is used.
+
+On macOS with VMD 2, use the Tcl loader directly instead:
+
+```tcl
+source /absolute/path/to/vmd_sdf_plugin/sdfloader1.0/sdfloader.tcl
+set molids [sdfload file.sdf]
+```
+
+or:
+
+```tcl
+source /absolute/path/to/vmd_sdf_plugin/sdfloader1.0/sdfloader.tcl
+mol new file.sdf
+```
+
+The Tcl loader path remains supported there; the limitation is specifically the compiled external `.so` plugin.
+
 ### Caveat / Limitation
 
 `File -> New Molecule` cannot create multiple VMD molecules from one file through the molfile plugin API.
@@ -203,11 +249,15 @@ Example SDFs are documented in [examples/README.md](examples/README.md).
 
 Quick checks:
 
+Compiled trajectory plugin:
+
 ```tcl
 mol new examples/multi_ligands_frames.sdf type SDF
 ```
 
 and
+
+Tcl split-record loader:
 
 ```tcl
 set molids [sdfload examples/multi_ligands_mixed.sdf]
