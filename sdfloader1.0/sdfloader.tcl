@@ -204,6 +204,77 @@ proc ::SDFLoader::parse_sdf_properties {lines start_index} {
     return $properties
 }
 
+proc ::SDFLoader::charge_property_priority {key} {
+    set normalized [string toupper [string trim $key]]
+
+    if {$normalized eq "ATOM.DPROP.PARTIALCHARGE"} {
+        return 400
+    }
+    if {$normalized eq "PARTIALCHARGE"} {
+        return 300
+    }
+    if {[string match "ATOM.DPROP.*" $normalized] && [string match "*PARTIALCHARGE*" $normalized]} {
+        return 250
+    }
+    if {[string match "ATOM.DPROP.*" $normalized] && [string match "*CHARGE*" $normalized]} {
+        return 200
+    }
+    if {[string match "*PARTIALCHARGE*" $normalized]} {
+        return 150
+    }
+
+    return 0
+}
+
+proc ::SDFLoader::apply_property_charges {properties atoms_var} {
+    upvar 1 $atoms_var atoms
+
+    if {[llength $atoms] == 0 || [dict size $properties] == 0} {
+        return
+    }
+
+    set best_priority 0
+    set best_values {}
+
+    foreach key [dict keys $properties] {
+        set priority [::SDFLoader::charge_property_priority $key]
+        if {$priority <= $best_priority} {
+            continue
+        }
+
+        set values [regexp -all -inline {\S+} [dict get $properties $key]]
+        if {[llength $values] != [llength $atoms]} {
+            continue
+        }
+
+        set parsed {}
+        set valid 1
+        foreach value $values {
+            if {![string is double -strict $value]} {
+                set valid 0
+                break
+            }
+            lappend parsed [expr {double($value)}]
+        }
+        if {!$valid} {
+            continue
+        }
+
+        set best_priority $priority
+        set best_values $parsed
+    }
+
+    if {$best_priority == 0} {
+        return
+    }
+
+    for {set i 0} {$i < [llength $atoms]} {incr i} {
+        set atom [lindex $atoms $i]
+        dict set atom charge [lindex $best_values $i]
+        lset atoms $i $atom
+    }
+}
+
 proc ::SDFLoader::shell_split {text} {
     set tokens {}
     set current ""
@@ -479,6 +550,7 @@ proc ::SDFLoader::parse_v3000_record {lines} {
     }
 
     set properties [::SDFLoader::parse_sdf_properties $lines $idx]
+    ::SDFLoader::apply_property_charges $properties atoms
     return [dict create atoms $atoms bonds $bonds properties $properties expected_atoms $natoms expected_bonds $nbonds]
 }
 
@@ -524,6 +596,7 @@ proc ::SDFLoader::parse_v2000_record {lines} {
     }
 
     set properties [::SDFLoader::parse_sdf_properties $lines $idx]
+    ::SDFLoader::apply_property_charges $properties atoms
     return [dict create atoms $atoms bonds $bonds properties $properties expected_atoms $natoms expected_bonds $nbonds]
 }
 

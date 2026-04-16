@@ -294,6 +294,99 @@ static bool parse_property_name(const std::vector<std::string> &lines, size_t st
   return false;
 }
 
+static std::unordered_map<std::string, std::string> parse_sd_properties(
+    const std::vector<std::string> &lines, size_t start) {
+  std::unordered_map<std::string, std::string> properties;
+
+  for (size_t idx = start; idx < lines.size();) {
+    const std::string line = lines[idx++];
+    if (!(line.rfind("> <", 0) == 0 || line.rfind(">  <", 0) == 0)) {
+      continue;
+    }
+
+    const size_t left = line.find('<');
+    const size_t right = line.find('>', left + 1);
+    if (left == std::string::npos || right == std::string::npos) continue;
+
+    const std::string key = to_upper(trim(line.substr(left + 1, right - left - 1)));
+    std::string value;
+    bool first = true;
+    while (idx < lines.size()) {
+      const std::string entry = lines[idx++];
+      if (entry.empty()) break;
+      if (!first) value.push_back('\n');
+      value += entry;
+      first = false;
+    }
+
+    properties[key] = value;
+  }
+
+  return properties;
+}
+
+static bool assign_atom_charges_from_text(const std::string &text, Record &record) {
+  const std::vector<std::string> tokens = split_tokens(text);
+  if (tokens.size() != record.atoms.size()) return false;
+
+  std::vector<float> charges;
+  charges.reserve(tokens.size());
+  for (const auto &token : tokens) {
+    float charge = 0.0f;
+    if (!parse_float(token, charge)) return false;
+    charges.push_back(charge);
+  }
+
+  for (size_t i = 0; i < charges.size(); ++i) {
+    record.atoms[i].charge = charges[i];
+  }
+  return true;
+}
+
+static int charge_property_priority(const std::string &key) {
+  if (key == "ATOM.DPROP.PARTIALCHARGE") return 400;
+  if (key == "PARTIALCHARGE") return 300;
+  if (key.rfind("ATOM.DPROP.", 0) == 0 && key.find("PARTIALCHARGE") != std::string::npos) {
+    return 250;
+  }
+  if (key.rfind("ATOM.DPROP.", 0) == 0 && key.find("CHARGE") != std::string::npos) {
+    return 200;
+  }
+  if (key.find("PARTIALCHARGE") != std::string::npos) return 150;
+  return 0;
+}
+
+static void apply_property_charges(
+    const std::unordered_map<std::string, std::string> &properties, Record &record) {
+  int best_priority = 0;
+  const std::string *best_value = nullptr;
+
+  for (const auto &entry : properties) {
+    const int priority = charge_property_priority(entry.first);
+    if (priority <= best_priority) continue;
+    if (split_tokens(entry.second).size() != record.atoms.size()) continue;
+    best_priority = priority;
+    best_value = &entry.second;
+  }
+
+  if (!best_value) return;
+  assign_atom_charges_from_text(*best_value, record);
+}
+
+static void apply_property_name(
+    const std::unordered_map<std::string, std::string> &properties, Record &record) {
+  if (!record.name.empty()) return;
+
+  for (const char *key : {"NAME", "TITLE", "ID"}) {
+    const auto found = properties.find(key);
+    if (found == properties.end()) continue;
+    const std::string value = trim(found->second);
+    if (value.empty()) continue;
+    record.name = value;
+    return;
+  }
+}
+
 static bool parse_v2000_record(const std::vector<std::string> &lines, Record &record,
                                std::string &error) {
   if (lines.size() < 4) {
@@ -388,8 +481,13 @@ static bool parse_v2000_record(const std::vector<std::string> &lines, Record &re
     }
   }
 
+  const auto properties = parse_sd_properties(lines, idx);
+  apply_property_charges(properties, record);
   if (record.name.empty()) {
-    parse_property_name(lines, idx, record.name);
+    apply_property_name(properties, record);
+    if (record.name.empty()) {
+      parse_property_name(lines, idx, record.name);
+    }
   }
   return true;
 }
@@ -522,8 +620,13 @@ static bool parse_v3000_record(const std::vector<std::string> &lines, Record &re
     record.bonds.push_back(bond);
   }
 
+  const auto properties = parse_sd_properties(lines, idx);
+  apply_property_charges(properties, record);
   if (record.name.empty()) {
-    parse_property_name(lines, idx, record.name);
+    apply_property_name(properties, record);
+    if (record.name.empty()) {
+      parse_property_name(lines, idx, record.name);
+    }
   }
   return true;
 }

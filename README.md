@@ -191,6 +191,8 @@ Example SDFs are provided in [examples](examples):
 
 - [examples/example.sdf](examples/example.sdf):
   mixed small records
+- [examples/ligand_with_charge.sdf](examples/ligand_with_charge.sdf):
+  Open Babel-style `atom.dprop.PartialCharge` property with one partial charge per atom
 - [examples/multi_ligands_frames.sdf](examples/multi_ligands_frames.sdf):
   multiple compatible records for trajectory mode
 - [examples/multi_ligands_mixed.sdf](examples/multi_ligands_mixed.sdf):
@@ -213,4 +215,5 @@ set molids [sdfload examples/multi_ligands_mixed.sdf]
 - The multi-molecule Tcl path uses TopoTools inside VMD.
 - V2000 SDF is supported.
 - Common V3000 atom and bond blocks are supported.
+- SD properties such as Open Babel `atom.dprop.PartialCharge` are used to populate per-atom partial charges when present.
 - Bond orders are loaded from the SDF records instead of relying only on VMD bond guessing.
