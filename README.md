@@ -235,3 +235,7 @@ set molids [sdfload examples/multi_ligands_mixed.sdf]
 The original code in this repository is licensed under the MIT License in [LICENSE](LICENSE).
 
 Vendored VMD plugin headers in [include](include) retain their original UIUC Open Source License terms. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [LICENSES/UIUC-Open-Source-License.txt](LICENSES/UIUC-Open-Source-License.txt).
+
+### AI Disclosure
+
+Most of this project, including the code, documentation, and workflow changes, was developed with assistance from AI coding tools and has not yet been reviewed or edited by the repository maintainer.
