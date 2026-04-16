@@ -81,14 +81,15 @@ jobs:
       - name: Create or update release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
           title="VMD SDF Loader ${tag}"
           notes="Prebuilt runtime bundles for ${tag}. Each archive contains the compiled molfile plugin, Tcl loader, README, and example SDF files."
 
-          if gh release view "${tag}" >/dev/null 2>&1; then
-            gh release upload "${tag}" release-artifacts/* --clobber
+          if gh release view "${tag}" --repo "${GH_REPO}" >/dev/null 2>&1; then
+            gh release upload "${tag}" release-artifacts/* --repo "${GH_REPO}" --clobber
           else
-            gh release create "${tag}" release-artifacts/* --title "${title}" --notes "${notes}"
+            gh release create "${tag}" release-artifacts/* --repo "${GH_REPO}" --title "${title}" --notes "${notes}"
           fi
