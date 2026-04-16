@@ -21,17 +21,6 @@ unset -nocomplain sdfplugin_dir
 source /absolute/path/to/vmd_sdf_plugin/sdfloader1.0/sdfloader.tcl
 ```
 
-For this checkout, the active paths are already:
-
-```tcl
-set sdfplugin_dir /Users/scottzhuang/git_rego/vmd_sdf_plugin/molfile
-if {[llength [info commands vmd_plugin_scandirectory]] && [file isdirectory $sdfplugin_dir]} {
-    catch {vmd_plugin_scandirectory $sdfplugin_dir *.so}
-}
-unset -nocomplain sdfplugin_dir
-source /Users/scottzhuang/git_rego/vmd_sdf_plugin/sdfloader1.0/sdfloader.tcl
-```
-
 Restart VMD after changing `~/.vmdrc`.
 
 If you start VMD directly with an SDF file, for example `vmd example.sdf`, the initial built-in SDF load may still print a Babel-related error before `~/.vmdrc` is sourced. Once `sdfloader.tcl` loads, it recovers the startup import and, by default, uses split-record mode so each SDF record becomes a separate VMD molecule.
