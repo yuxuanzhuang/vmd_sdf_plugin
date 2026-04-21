@@ -35,6 +35,10 @@ namespace eval ::SDFLoader {
     variable menu_registered 0
     variable startup_autoload_done 0
     variable vmd_packages_ready 0
+    variable gui_filename
+    variable gui_status
+    array set gui_filename {}
+    array set gui_status {}
     variable multimol_types {isissdf sdfmulti sdfmols sdfsplit}
     variable trajectory_type_labels {
         sdf
@@ -922,30 +926,163 @@ proc ::SDFLoader::install_mol_wrapper {} {
     }
 }
 
-proc ::SDFLoader::gui_open {{mode molecules}} {
+proc ::SDFLoader::gui_window_path {mode} {
+    set mode [::SDFLoader::normalize_mode $mode]
+    if {$mode eq "trajectory"} {
+        return .sdfloadgui_traj
+    }
+    return .sdfloadgui_multi
+}
+
+proc ::SDFLoader::gui_menu_name {mode} {
+    set mode [::SDFLoader::normalize_mode $mode]
+    if {$mode eq "trajectory"} {
+        return sdfloadgui_traj
+    }
+    return sdfloadgui_multi
+}
+
+proc ::SDFLoader::gui_initial_dir {} {
     variable gui_last_dir
     variable startup_cwd
 
-    set initialdir ""
     if {$gui_last_dir ne "" && [file isdirectory $gui_last_dir]} {
-        set initialdir $gui_last_dir
+        return $gui_last_dir
     } elseif {$startup_cwd ne "" && [file isdirectory $startup_cwd]} {
-        set initialdir $startup_cwd
+        return $startup_cwd
     } elseif {[file isdirectory [pwd]]} {
-        set initialdir [pwd]
+        return [pwd]
     } elseif {[info exists ::env(HOME)] && [file isdirectory $::env(HOME)]} {
-        set initialdir $::env(HOME)
+        return $::env(HOME)
     }
 
+    return ""
+}
+
+proc ::SDFLoader::gui_choose_file {} {
+    set initialdir [::SDFLoader::gui_initial_dir]
     set filename [tk_getOpenFile \
         -title "Load SDF File" \
         -initialdir $initialdir \
         -filetypes {{{SDF Files} {.sdf .sd}} {{All Files} {*}}}]
+
+    if {$filename eq ""} {
+        return ""
+    }
+    return [file normalize $filename]
+}
+
+proc ::SDFLoader::gui_browse {mode} {
+    variable gui_filename
+    variable gui_last_dir
+
+    set mode [::SDFLoader::normalize_mode $mode]
+    set filename [::SDFLoader::gui_choose_file]
     if {$filename eq ""} {
         return
     }
     set gui_last_dir [file dirname $filename]
-    ::SDFLoader::load $filename $mode
+    set gui_filename($mode) $filename
+}
+
+proc ::SDFLoader::gui_load_selected {mode} {
+    variable gui_filename
+    variable gui_last_dir
+    variable gui_status
+
+    set mode [::SDFLoader::normalize_mode $mode]
+    if {![info exists gui_filename($mode)]} {
+        set gui_filename($mode) ""
+    }
+    set filename [string trim $gui_filename($mode)]
+    if {$filename eq ""} {
+        set filename [::SDFLoader::gui_choose_file]
+        if {$filename eq ""} {
+            return
+        }
+        set gui_filename($mode) $filename
+    }
+
+    set gui_last_dir [file dirname $filename]
+    set gui_status($mode) "Loading [file tail $filename]..."
+    catch {update idletasks}
+
+    if {[catch {set result [::SDFLoader::load $filename $mode]} err]} {
+        set gui_status($mode) "Error: $err"
+        catch {tk_messageBox -icon error -type ok -title "Load SDF File" -message $err}
+        return
+    }
+
+    if {$mode eq "trajectory"} {
+        set gui_status($mode) [format "Loaded trajectory molecule %s from %s" $result [file tail $filename]]
+    } else {
+        set gui_status($mode) [format "Loaded %d molecule(s) from %s" [llength $result] [file tail $filename]]
+    }
+}
+
+proc ::SDFLoader::gui_close {mode} {
+    set mode [::SDFLoader::normalize_mode $mode]
+    set w [::SDFLoader::gui_window_path $mode]
+    set menu_name [::SDFLoader::gui_menu_name $mode]
+
+    if {[llength [info commands menu]]} {
+        catch {menu $menu_name off}
+    }
+    if {[winfo exists $w]} {
+        wm withdraw $w
+    }
+}
+
+proc ::SDFLoader::gui_open {{mode molecules}} {
+    variable gui_filename
+    variable gui_status
+
+    set mode [::SDFLoader::normalize_mode $mode]
+    set w [::SDFLoader::gui_window_path $mode]
+
+    if {[winfo exists $w]} {
+        wm deiconify $w
+        raise $w
+        return $w
+    }
+
+    if {![info exists gui_filename($mode)]} {
+        set gui_filename($mode) ""
+    }
+    if {![info exists gui_status($mode)]} {
+        set gui_status($mode) "Select an SDF file to load."
+    }
+
+    toplevel $w
+    if {$mode eq "trajectory"} {
+        wm title $w "Load SDF As Trajectory"
+    } else {
+        wm title $w "Load SDF As Molecules"
+    }
+    wm resizable $w 0 0
+    wm protocol $w WM_DELETE_WINDOW [list ::SDFLoader::gui_close $mode]
+
+    frame $w.file
+    label $w.file.label -text "SDF file:"
+    entry $w.file.entry -width 48 -textvariable ::SDFLoader::gui_filename($mode)
+    button $w.file.browse -text "Browse..." -command [list ::SDFLoader::gui_browse $mode]
+    pack $w.file.label -side left -padx {0 4}
+    pack $w.file.entry -side left -fill x -expand 1
+    pack $w.file.browse -side left -padx {6 0}
+
+    frame $w.actions
+    button $w.actions.load -text "Load" -command [list ::SDFLoader::gui_load_selected $mode]
+    button $w.actions.close -text "Close" -command [list ::SDFLoader::gui_close $mode]
+    pack $w.actions.close -side right
+    pack $w.actions.load -side right -padx {0 6}
+
+    label $w.status -textvariable ::SDFLoader::gui_status($mode) -anchor w
+
+    pack $w.file -side top -fill x -padx 8 -pady {8 4}
+    pack $w.actions -side top -fill x -padx 8 -pady 4
+    pack $w.status -side top -fill x -padx 8 -pady {2 8}
+
+    return $w
 }
 
 proc ::SDFLoader::register_menu {} {
