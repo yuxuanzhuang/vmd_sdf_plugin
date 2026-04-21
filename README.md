@@ -29,11 +29,9 @@ This is enough for:
 - `molecule new file.sdf`
 - `Extensions -> Data -> Load SDF`
 
-Adding the compiled `molfile/` plugin directory is optional. Only add this if you also want:
+Adding the compiled `molfile/` plugin directory is optional. Add this if you also want:
 
 - `File -> New Molecule -> Structure Data File SDF (trajectory)`
-- `mol new file.sdf type SDF`
-- `molecule new file.sdf type {Structure Data File SDF (trajectory)}`
 
 ```tcl
 set sdfplugin_dir /absolute/path/to/vmd_sdf_plugin/molfile
